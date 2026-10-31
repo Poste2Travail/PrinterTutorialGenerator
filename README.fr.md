@@ -1,5 +1,8 @@
 # PrinterTutorialGenerator
 
+
+![Illustration : un utilisateur suit un guide d'installation d'imprimante en trois étapes](assets/printer-tutorial-illustration.png)
+
 **Français** | [English](README.md)
 
 Générateur de tutoriels personnalisés pour l'installation des imprimantes réseau, basé sur le **nom** de l'imprimante et son **emplacement**. Un outil simple pour les équipes workplace, déployable en local sur un serveur IIS.

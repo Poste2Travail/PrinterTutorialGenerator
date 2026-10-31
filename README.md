@@ -1,5 +1,8 @@
 # PrinterTutorialGenerator
 
+
+![Illustration: a technician-style user follows a three-step printer installation guide](assets/printer-tutorial-illustration.png)
+
 [Français](README.fr.md) | **English**
 
 A generator of personalized printer installation tutorials, based on the printer **name** and its **location**. A simple tool for workplace teams, deployable locally on an IIS server.
