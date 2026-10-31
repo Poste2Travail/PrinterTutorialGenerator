@@ -1,0 +1,512 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Éditeur d'Imprimantes</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: linear-gradient(15deg, #f8f8f8 0%, #FFFFFF 100%); min-height: 100vh; padding: 20px; }
+        .container { max-width: 1200px; margin: 0 auto; background: #FFF; border-radius: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.08); overflow: hidden; }
+        .header { background: linear-gradient(135deg, #000000 0%, #1a1a1a 100%); padding: 20px 30px; color: #FFF; display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; }
+        .header h1 { font-size: 24px; font-weight: 300; }
+        .lang button { background: transparent; color: #FFF; border: 1px solid #555; padding: 6px 12px; cursor: pointer; border-radius: 4px; font-size: 14px; }
+        .lang button.active { background: #FFF; color: #000; }
+        .main-content { padding: 30px; }
+        .alert-success { background: #e6ffe6; color: #006400; border: 1px solid #a3e9a4; padding: 10px; border-radius: 5px; margin-top: 10px; display: none; }
+        .alert-error { background: #f2dede; color: #a94442; border: 1px solid #a94442; padding: 10px; border-radius: 5px; margin-top: 10px; display: none; }
+
+        .tabs { display: flex; gap: 10px; margin-bottom: 20px; border-bottom: 2px solid #e0e0e0; }
+        .tab { padding: 12px 24px; cursor: pointer; background: transparent; border: none; border-bottom: 3px solid transparent; font-size: 16px; font-weight: 500; color: #666; transition: all 0.3s; font-family: inherit; }
+        .tab:hover { color: #333; background: #f8f8f8; }
+        .tab.active { color: #000; border-bottom-color: #333; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+
+        .form-section { border: 1px solid #ddd; padding: 20px; border-radius: 8px; margin-bottom: 20px; background: #fcfcfc; }
+        .form-section h2 { font-size: 1.4em; color: #333; margin-bottom: 20px; }
+        .form-section h3 { font-size: 1.1em; color: #555; margin: 20px 0 15px 0; border-bottom: 1px solid #e0e0e0; padding-bottom: 8px; }
+        .input-group { margin-bottom: 15px; }
+        .input-group label { display: block; font-weight: 500; margin-bottom: 5px; color: #555; font-size: 14px; }
+        .input-group input, .input-group textarea { width: 100%; padding: 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 16px; font-family: inherit; }
+        .input-group textarea { min-height: 80px; resize: vertical; }
+        .input-group small { display: block; margin-top: 5px; color: #999; font-size: 13px; }
+
+        .radio-group { display: flex; gap: 20px; margin-top: 8px; }
+        .radio-group label { display: flex; align-items: center; gap: 8px; cursor: pointer; font-weight: normal; }
+        .radio-group input[type="radio"] { width: auto; cursor: pointer; }
+
+        #printers-raw { width: 100%; min-height: 250px; padding: 15px; border: 1px solid #ccc; border-radius: 5px; font-family: 'Consolas', 'Monaco', monospace; font-size: 14px; margin-bottom: 20px; resize: vertical; }
+
+        .editor-controls, .form-controls { display: flex; gap: 15px; justify-content: flex-end; margin-top: 15px; }
+        .editor-controls button, .form-controls button { padding: 10px 20px; border: none; border-radius: 5px; cursor: pointer; font-weight: 500; transition: background 0.3s; font-family: inherit; }
+        #add-printer-btn { background: #333; color: #FFF; }
+        #add-printer-btn:hover { background: #555; }
+        #save-btn { background: #666; color: #FFF; }
+        #save-btn:hover { background: #777; }
+        #download-btn { background: #e0e0e0; color: #333; }
+        #download-btn:hover { background: #ccc; }
+        #config-btn { background: #333; color: #FFF; }
+        #config-btn:hover { background: #555; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1 id="ui-title">Éditeur de Configuration d'Imprimantes</h1>
+            <div class="lang">
+                <button type="button" data-lang="fr" class="active">FR</button>
+                <button type="button" data-lang="en">EN</button>
+            </div>
+        </div>
+
+        <div class="main-content">
+            <div id="status-message" class="alert-success"></div>
+            <div id="error-message" class="alert-error"></div>
+
+            <div class="tabs">
+                <button class="tab active" type="button" data-tab="printers-tab" id="tab-printers">📋 Imprimantes</button>
+                <button class="tab" type="button" data-tab="customization-tab" id="tab-customization">🎨 Personnalisation</button>
+                <button class="tab" type="button" data-tab="json-tab" id="tab-json">💻 JSON Brut</button>
+            </div>
+
+            <!-- Onglet Imprimantes -->
+            <div id="printers-tab" class="tab-content active">
+                <div class="form-section">
+                    <h2 id="h-add">Ajout rapide d'une imprimante</h2>
+                    <form id="addPrinterForm">
+                        <div class="input-group">
+                            <label for="new_name" id="l-name">Nom de l'imprimante (name) :</label>
+                            <input type="text" id="new_name" required>
+                        </div>
+                        <div class="input-group">
+                            <label for="new_location" id="l-location">Emplacement (location) :</label>
+                            <input type="text" id="new_location" required>
+                        </div>
+                        <div class="input-group">
+                            <label for="new_queue" id="l-queue">File d'impression (queue) :</label>
+                            <input type="text" id="new_queue" required>
+                            <small id="h-queue"></small>
+                        </div>
+                        <div class="input-group">
+                            <label for="new_server" id="l-server">Serveur d'impression (server) :</label>
+                            <input type="text" id="new_server" required>
+                            <small id="h-server"></small>
+                        </div>
+                        <div class="input-group">
+                            <label for="new_mac_driver" id="l-driver">Pilote macOS (mac-driver) :</label>
+                            <input type="text" id="new_mac_driver" value="Generic PostScript Printer">
+                            <small id="h-driver"></small>
+                        </div>
+                        <div class="form-controls">
+                            <button type="submit" id="add-printer-btn"></button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+
+            <!-- Onglet Personnalisation -->
+            <div id="customization-tab" class="tab-content">
+                <div class="form-section">
+                    <h2 id="h-cust"></h2>
+
+                    <h3 id="h-header"></h3>
+                    <div class="input-group"><label for="config_title_fr" id="l-title-fr"></label><input type="text" id="config_title_fr"></div>
+                    <div class="input-group"><label for="config_subtitle_fr" id="l-subtitle-fr"></label><input type="text" id="config_subtitle_fr"></div>
+                    <div class="input-group"><label for="config_title_en" id="l-title-en"></label><input type="text" id="config_title_en"></div>
+                    <div class="input-group"><label for="config_subtitle_en" id="l-subtitle-en"></label><input type="text" id="config_subtitle_en"></div>
+
+                    <h3 id="h-logo"></h3>
+                    <div class="input-group">
+                        <label for="config_logo_url" id="l-logo-url"></label>
+                        <input type="url" id="config_logo_url">
+                        <small id="h-logo-url"></small>
+                    </div>
+                    <div class="input-group">
+                        <label id="l-logo-pos"></label>
+                        <div class="radio-group">
+                            <label><input type="radio" name="logo_position" value="left"> <span id="pos-left"></span></label>
+                            <label><input type="radio" name="logo_position" value="center" checked> <span id="pos-center"></span></label>
+                            <label><input type="radio" name="logo_position" value="right"> <span id="pos-right"></span></label>
+                        </div>
+                    </div>
+
+                    <h3 id="h-footer-fr"></h3>
+                    <div class="input-group"><label for="config_footer_title_fr" id="l-f-title-fr"></label><input type="text" id="config_footer_title_fr"></div>
+                    <div class="input-group"><label for="config_footer_subtitle_fr" id="l-f-sub-fr"></label><input type="text" id="config_footer_subtitle_fr"></div>
+                    <div class="input-group"><label for="config_footer_email" id="l-f-email"></label><input type="email" id="config_footer_email"></div>
+                    <div class="input-group"><label for="config_footer_phone" id="l-f-phone"></label><input type="tel" id="config_footer_phone"></div>
+                    <div class="input-group"><label for="config_footer_hours_fr" id="l-f-hours-fr"></label><input type="text" id="config_footer_hours_fr"></div>
+                    <div class="input-group"><label for="config_footer_website" id="l-f-web"></label><input type="url" id="config_footer_website"></div>
+                    <div class="input-group"><label for="config_footer_portal_fr" id="l-f-portal-fr"></label><input type="text" id="config_footer_portal_fr"></div>
+                    <div class="input-group"><label for="config_footer_portal_url_fr" id="l-f-portal-url-fr"></label><input type="url" id="config_footer_portal_url_fr"></div>
+
+                    <h3 id="h-footer-en"></h3>
+                    <div class="input-group"><label for="config_footer_title_en" id="l-f-title-en"></label><input type="text" id="config_footer_title_en"></div>
+                    <div class="input-group"><label for="config_footer_subtitle_en" id="l-f-sub-en"></label><input type="text" id="config_footer_subtitle_en"></div>
+                    <div class="input-group"><label for="config_footer_hours_en" id="l-f-hours-en"></label><input type="text" id="config_footer_hours_en"></div>
+                    <div class="input-group"><label for="config_footer_portal_en" id="l-f-portal-en"></label><input type="text" id="config_footer_portal_en"></div>
+                    <div class="input-group"><label for="config_footer_portal_url_en" id="l-f-portal-url-en"></label><input type="url" id="config_footer_portal_url_en"></div>
+
+                    <div class="form-controls">
+                        <button type="button" id="config-btn" onclick="saveConfiguration()"></button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Onglet JSON Brut -->
+            <div id="json-tab" class="tab-content">
+                <div class="form-section">
+                    <h2 id="h-json"></h2>
+                    <p id="p-json" style="margin-bottom: 10px; font-size: 14px; color: #666;"></p>
+                    <textarea id="printers-raw"></textarea>
+                    <div class="editor-controls">
+                        <button id="save-btn" type="button" onclick="saveToLocalStorage()"></button>
+                        <button id="download-btn" type="button" onclick="downloadJSON()"></button>
+                    </div>
+                    <p id="p-final" style="margin-top: 20px; font-size: 14px; color: #666;"></p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        var T = {
+            fr: {
+                title: 'Éditeur de Configuration d\'Imprimantes',
+                tabPrinters: '📋 Imprimantes', tabCust: '🎨 Personnalisation', tabJson: '💻 JSON Brut',
+                hAdd: 'Ajout rapide d\'une imprimante',
+                lName: 'Nom de l\'imprimante (name) :', lLocation: 'Emplacement (location) :',
+                lQueue: 'File d\'impression (queue) :', hQueue: 'Nom de partage de la file d\'impression sur le serveur, par exemple IMP-4E-03.',
+                lServer: 'Serveur d\'impression (server) :', hServer: 'Seulement le nom du serveur d\'impression, sans la file d\'impression.',
+                lDriver: 'Pilote macOS (mac-driver) :', hDriver: 'Laisser « Generic PostScript Printer » si ce n\'est pas un pilote spécifique.',
+                addBtn: 'Ajouter l\'imprimante',
+                hCust: 'Configuration de l\'interface',
+                hHeader: 'En-tête', lTitleFr: 'Titre principal (Français) :', lSubFr: 'Sous-titre (Français) :',
+                lTitleEn: 'Titre principal (English) :', lSubEn: 'Sous-titre (English) :',
+                hLogo: 'Logo', lLogoUrl: 'URL du logo :', hLogoUrl: 'Laissez vide pour utiliser uniquement l\'emoji 🖨️',
+                lLogoPos: 'Position du logo :', posLeft: 'Gauche', posCenter: 'Centre', posRight: 'Droite',
+                hFooterFr: 'Bas de page (Français)', lFTitleFr: 'Titre :', lFSubFr: 'Sous-titre :',
+                lFEmail: 'Email :', lFPhone: 'Téléphone :', lFHoursFr: 'Heures d\'ouverture (Français) :',
+                lFWeb: 'Site web :', lFPortalFr: 'Portail (Français) :', lFPortalUrlFr: 'URL du portail (Français) :',
+                hFooterEn: 'Bas de page (English)', lFTitleEn: 'Title :', lFSubEn: 'Subtitle :',
+                lFHoursEn: 'Opening hours (English) :', lFPortalEn: 'Portal (English) :', lFPortalUrlEn: 'Portal URL (English) :',
+                saveCfg: '💾 Sauvegarder la configuration',
+                hJson: 'Édition JSON brute', pJson: 'Modifiez ce bloc pour réorganiser ou supprimer des imprimantes.',
+                saveBtn: 'Sauvegarder dans le navigateur', dlBtn: 'Télécharger JSON',
+                pFinal: '<strong>Étape finale :</strong> après l\'ajout ou la modification, téléchargez le fichier <code>printers.json</code> et remplacez-le manuellement sur le serveur IIS pour que les utilisateurs voient la mise à jour.',
+                msgLoaded: 'Données chargées avec succès ✔️', msgLocal: 'Liste chargée depuis le navigateur.',
+                msgDefault: 'Configuration par défaut chargée.', msgCfgSaved: '✅ Configuration sauvegardée avec succès !',
+                msgAdded: 'L\'imprimante « {n} » a été ajoutée. N\'oubliez pas de télécharger le JSON !',
+                msgSaved: 'Sauvegarde réussie dans le navigateur ! ✔️', msgBadJson: 'Erreur : le format JSON est invalide.',
+                msgDownloaded: 'Fichier « printers.json » généré. Mettez-le en ligne sur IIS ! 💾',
+                msgDlErr: 'Erreur : impossible de télécharger, le format JSON est invalide.',
+                defaultPrinter: 'Exemple d\'imprimante (à modifier)'
+            },
+            en: {
+                title: 'Printer Configuration Editor',
+                tabPrinters: '📋 Printers', tabCust: '🎨 Customization', tabJson: '💻 Raw JSON',
+                hAdd: 'Quick add a printer',
+                lName: 'Printer name (name):', lLocation: 'Location (location):',
+                lQueue: 'Print queue (queue):', hQueue: 'Share name of the print queue on the server, for example IMP-4E-03.',
+                lServer: 'Print server (server):', hServer: 'Print server name only, without the print queue.',
+                lDriver: 'macOS driver (mac-driver):', hDriver: 'Keep "Generic PostScript Printer" unless a specific driver is needed.',
+                addBtn: 'Add printer',
+                hCust: 'Interface configuration',
+                hHeader: 'Header', lTitleFr: 'Main title (French):', lSubFr: 'Subtitle (French):',
+                lTitleEn: 'Main title (English):', lSubEn: 'Subtitle (English):',
+                hLogo: 'Logo', lLogoUrl: 'Logo URL:', hLogoUrl: 'Leave empty to use the 🖨️ emoji only',
+                lLogoPos: 'Logo position:', posLeft: 'Left', posCenter: 'Center', posRight: 'Right',
+                hFooterFr: 'Footer (French)', lFTitleFr: 'Title:', lFSubFr: 'Subtitle:',
+                lFEmail: 'Email:', lFPhone: 'Phone:', lFHoursFr: 'Opening hours (French):',
+                lFWeb: 'Website:', lFPortalFr: 'Portal (French):', lFPortalUrlFr: 'Portal URL (French):',
+                hFooterEn: 'Footer (English)', lFTitleEn: 'Title:', lFSubEn: 'Subtitle:',
+                lFHoursEn: 'Opening hours (English):', lFPortalEn: 'Portal (English):', lFPortalUrlEn: 'Portal URL (English):',
+                saveCfg: '💾 Save configuration',
+                hJson: 'Raw JSON editing', pJson: 'Edit this block to reorder or remove printers.',
+                saveBtn: 'Save in this browser', dlBtn: 'Download JSON',
+                pFinal: '<strong>Final step:</strong> after adding or editing, download the <code>printers.json</code> file and replace it manually on the IIS server so users see the update.',
+                msgLoaded: 'Data loaded successfully ✔️', msgLocal: 'List loaded from this browser.',
+                msgDefault: 'Default configuration loaded.', msgCfgSaved: '✅ Configuration saved successfully!',
+                msgAdded: 'Printer "{n}" was added. Don\'t forget to download the JSON!',
+                msgSaved: 'Saved in this browser! ✔️', msgBadJson: 'Error: invalid JSON format.',
+                msgDownloaded: 'File "printers.json" generated. Put it online on IIS! 💾',
+                msgDlErr: 'Error: unable to download, invalid JSON format.',
+                defaultPrinter: 'Example printer (to edit)'
+            }
+        };
+
+        var STORAGE_KEY = 'printersListRaw';
+        var RAW_TEXTAREA = document.getElementById('printers-raw');
+        var ADD_FORM = document.getElementById('addPrinterForm');
+        var STATUS_MESSAGE = document.getElementById('status-message');
+        var ERROR_MESSAGE = document.getElementById('error-message');
+        var lang = 'fr';
+        var currentData = { config: {}, printers: [] };
+
+        function t(k) { return T[lang][k]; }
+        function $(id) { return document.getElementById(id); }
+
+        function setText(id, value) { var n = $(id); if (n) n.textContent = value; }
+
+        function applyLabels() {
+            document.documentElement.lang = lang;
+            setText('ui-title', t('title'));
+            setText('tab-printers', t('tabPrinters'));
+            setText('tab-customization', t('tabCust'));
+            setText('tab-json', t('tabJson'));
+            setText('h-add', t('hAdd'));
+            setText('l-name', t('lName'));
+            setText('l-location', t('lLocation'));
+            setText('l-queue', t('lQueue'));
+            setText('h-queue', t('hQueue'));
+            setText('l-server', t('lServer'));
+            setText('h-server', t('hServer'));
+            setText('l-driver', t('lDriver'));
+            setText('h-driver', t('hDriver'));
+            setText('add-printer-btn', t('addBtn'));
+            setText('h-cust', t('hCust'));
+            setText('h-header', t('hHeader'));
+            setText('l-title-fr', t('lTitleFr'));
+            setText('l-subtitle-fr', t('lSubFr'));
+            setText('l-title-en', t('lTitleEn'));
+            setText('l-subtitle-en', t('lSubEn'));
+            setText('h-logo', t('hLogo'));
+            setText('l-logo-url', t('lLogoUrl'));
+            setText('h-logo-url', t('hLogoUrl'));
+            setText('l-logo-pos', t('lLogoPos'));
+            setText('pos-left', t('posLeft'));
+            setText('pos-center', t('posCenter'));
+            setText('pos-right', t('posRight'));
+            setText('h-footer-fr', t('hFooterFr'));
+            setText('l-f-title-fr', t('lFTitleFr'));
+            setText('l-f-sub-fr', t('lFSubFr'));
+            setText('l-f-email', t('lFEmail'));
+            setText('l-f-phone', t('lFPhone'));
+            setText('l-f-hours-fr', t('lFHoursFr'));
+            setText('l-f-web', t('lFWeb'));
+            setText('l-f-portal-fr', t('lFPortalFr'));
+            setText('l-f-portal-url-fr', t('lFPortalUrlFr'));
+            setText('h-footer-en', t('hFooterEn'));
+            setText('l-f-title-en', t('lFTitleEn'));
+            setText('l-f-sub-en', t('lFSubEn'));
+            setText('l-f-hours-en', t('lFHoursEn'));
+            setText('l-f-portal-en', t('lFPortalEn'));
+            setText('l-f-portal-url-en', t('lFPortalUrlEn'));
+            setText('config-btn', t('saveCfg'));
+            setText('h-json', t('hJson'));
+            setText('p-json', t('pJson'));
+            setText('save-btn', t('saveBtn'));
+            setText('download-btn', t('dlBtn'));
+            $('p-final').innerHTML = t('pFinal');
+            document.querySelectorAll('.lang button').forEach(function (b) {
+                b.classList.toggle('active', b.getAttribute('data-lang') === lang);
+            });
+        }
+
+        function setLang(l) {
+            lang = l;
+            try { localStorage.setItem('editorLang', l); } catch (e) {}
+            applyLabels();
+        }
+
+        document.querySelectorAll('.lang button').forEach(function (b) {
+            b.addEventListener('click', function () { setLang(b.getAttribute('data-lang')); });
+        });
+
+        document.querySelectorAll('.tab').forEach(function (b) {
+            b.addEventListener('click', function () {
+                document.querySelectorAll('.tab').forEach(function (x) { x.classList.remove('active'); });
+                document.querySelectorAll('.tab-content').forEach(function (c) { c.classList.remove('active'); });
+                b.classList.add('active');
+                $(b.getAttribute('data-tab')).classList.add('active');
+            });
+        });
+
+        function switchTab(tabName) { /* compatibilité */ }
+
+        async function loadInitialData() {
+            try {
+                var response = await fetch('printers.json', { cache: 'no-cache' });
+                if (!response.ok) throw new Error('printers.json');
+                var fileData = await response.json();
+                if (Array.isArray(fileData)) {
+                    currentData = { config: {}, printers: fileData };
+                } else {
+                    currentData = fileData;
+                }
+                RAW_TEXTAREA.value = JSON.stringify(currentData, null, 4);
+                loadConfigFields();
+                showStatus(t('msgLoaded'), 'success');
+            } catch (fileError) {
+                var savedData = localStorage.getItem(STORAGE_KEY);
+                if (savedData) {
+                    try {
+                        currentData = JSON.parse(savedData);
+                        RAW_TEXTAREA.value = savedData;
+                        loadConfigFields();
+                        showStatus(t('msgLocal'), 'success');
+                    } catch (e) {
+                        initializeDefault();
+                    }
+                } else {
+                    initializeDefault();
+                }
+            }
+        }
+
+        function initializeDefault() {
+            currentData = {
+                config: {
+                    title_fr: "Assistant Installation Imprimantes",
+                    subtitle_fr: "Installation guidée des imprimantes réseau",
+                    title_en: "Printer Installation Assistant",
+                    subtitle_en: "Guided network printer installation",
+                    logo_url: "",
+                    logo_position: "center",
+                    footer: {
+                        fr: { title: "Besoin d'aide ?", subtitle: "Support technique :", email: "support@exemple.local", phone: "", hours: "", website: "", portal_text: "", portal_url: "" },
+                        en: { title: "Need help?", subtitle: "Technical support:", email: "support@exemple.local", phone: "", hours: "", website: "", portal_text: "", portal_url: "" }
+                    }
+                },
+                printers: [
+                    { name: "Imprimante Ex-01", location: t('defaultPrinter'), queue: "IMP-EX-01", server: "PRTSRV01.exemple.local", "mac-driver": "Generic PostScript Printer" }
+                ]
+            };
+            RAW_TEXTAREA.value = JSON.stringify(currentData, null, 4);
+            loadConfigFields();
+            localStorage.setItem(STORAGE_KEY, RAW_TEXTAREA.value);
+            showStatus(t('msgDefault'), 'error');
+        }
+
+        function loadConfigFields() {
+            var config = currentData.config || {};
+            $('config_title_fr').value = config.title_fr || "";
+            $('config_subtitle_fr').value = config.subtitle_fr || "";
+            $('config_title_en').value = config.title_en || "";
+            $('config_subtitle_en').value = config.subtitle_en || "";
+            $('config_logo_url').value = config.logo_url || "";
+            var pos = config.logo_position || "center";
+            var radio = document.querySelector('input[name="logo_position"][value="' + pos + '"]');
+            if (radio) radio.checked = true;
+
+            var fr = (config.footer && config.footer.fr) || {};
+            var en = (config.footer && config.footer.en) || {};
+            $('config_footer_title_fr').value = fr.title || "";
+            $('config_footer_subtitle_fr').value = fr.subtitle || "";
+            $('config_footer_hours_fr').value = fr.hours || "";
+            $('config_footer_portal_fr').value = fr.portal_text || "";
+            $('config_footer_portal_url_fr').value = fr.portal_url || "";
+            $('config_footer_title_en').value = en.title || "";
+            $('config_footer_subtitle_en').value = en.subtitle || "";
+            $('config_footer_hours_en').value = en.hours || "";
+            $('config_footer_portal_en').value = en.portal_text || "";
+            $('config_footer_portal_url_en').value = en.portal_url || "";
+            $('config_footer_email').value = fr.email || en.email || "";
+            $('config_footer_phone').value = fr.phone || en.phone || "";
+            $('config_footer_website').value = fr.website || en.website || "";
+        }
+
+        function saveConfiguration() {
+            var logoPosition = document.querySelector('input[name="logo_position"]:checked').value;
+            var email = $('config_footer_email').value;
+            var phone = $('config_footer_phone').value;
+            var website = $('config_footer_website').value;
+
+            currentData.config = {
+                title_fr: $('config_title_fr').value,
+                subtitle_fr: $('config_subtitle_fr').value,
+                title_en: $('config_title_en').value,
+                subtitle_en: $('config_subtitle_en').value,
+                logo_url: $('config_logo_url').value,
+                logo_position: logoPosition,
+                footer: {
+                    fr: {
+                        title: $('config_footer_title_fr').value,
+                        subtitle: $('config_footer_subtitle_fr').value,
+                        email: email, phone: phone,
+                        hours: $('config_footer_hours_fr').value,
+                        website: website,
+                        portal_text: $('config_footer_portal_fr').value,
+                        portal_url: $('config_footer_portal_url_fr').value
+                    },
+                    en: {
+                        title: $('config_footer_title_en').value,
+                        subtitle: $('config_footer_subtitle_en').value,
+                        email: email, phone: phone,
+                        hours: $('config_footer_hours_en').value,
+                        website: website,
+                        portal_text: $('config_footer_portal_en').value,
+                        portal_url: $('config_footer_portal_url_en').value
+                    }
+                }
+            };
+
+            RAW_TEXTAREA.value = JSON.stringify(currentData, null, 4);
+            saveToLocalStorage(false);
+            showStatus(t('msgCfgSaved'), 'success');
+        }
+
+        ADD_FORM.addEventListener('submit', function (event) {
+            event.preventDefault();
+            var newPrinter = {
+                name: $('new_name').value.trim(),
+                location: $('new_location').value.trim(),
+                queue: $('new_queue').value.trim(),
+                server: $('new_server').value.trim(),
+                "mac-driver": $('new_mac_driver').value.trim() || "Generic PostScript Printer"
+            };
+            if (!Array.isArray(currentData.printers)) currentData.printers = [];
+            currentData.printers.push(newPrinter);
+            RAW_TEXTAREA.value = JSON.stringify(currentData, null, 4);
+            saveToLocalStorage(false);
+            showStatus(t('msgAdded').replace('{n}', newPrinter.name), 'success');
+            ADD_FORM.reset();
+            $('new_mac_driver').value = "Generic PostScript Printer";
+        });
+
+        function saveToLocalStorage(showMessage) {
+            if (showMessage === undefined) showMessage = true;
+            try {
+                currentData = JSON.parse(RAW_TEXTAREA.value);
+                localStorage.setItem(STORAGE_KEY, JSON.stringify(currentData, null, 4));
+                if (showMessage) showStatus(t('msgSaved'), 'success');
+            } catch (e) {
+                showStatus(t('msgBadJson'), 'error');
+            }
+        }
+
+        function downloadJSON() {
+            try {
+                var jsonContent = JSON.parse(RAW_TEXTAREA.value);
+                var dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(jsonContent, null, 4));
+                var a = document.createElement('a');
+                a.setAttribute('href', dataStr);
+                a.setAttribute('download', 'printers.json');
+                document.body.appendChild(a);
+                a.click();
+                a.remove();
+                showStatus(t('msgDownloaded'), 'success');
+            } catch (e) {
+                showStatus(t('msgDlErr'), 'error');
+            }
+        }
+
+        function showStatus(message, type) {
+            STATUS_MESSAGE.style.display = 'none';
+            ERROR_MESSAGE.style.display = 'none';
+            var target = (type === 'success' ? STATUS_MESSAGE : ERROR_MESSAGE);
+            target.textContent = message;
+            target.style.display = 'block';
+            setTimeout(function () { target.style.display = 'none'; }, 7000);
+        }
+
+        var savedLang = null;
+        try { savedLang = localStorage.getItem('editorLang'); } catch (e) {}
+        lang = (savedLang === 'en' || savedLang === 'fr') ? savedLang
+            : ((navigator.language || 'fr').toLowerCase().indexOf('en') === 0 ? 'en' : 'fr');
+        applyLabels();
+        window.onload = loadInitialData;
+    </script>
+</body>
+</html>

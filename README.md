@@ -1,2 +1,546 @@
 # PrinterTutorialGenerator
-Générateur de tutoriels personnalisés pour imprimantes, basé sur le nom et l'emplacement. Un outil simple pour les équipes workplace.
+
+[Français](README.fr.md) | **English**
+
+A generator of personalized printer installation tutorials, based on the printer **name** and its **location**. A simple tool for workplace teams, deployable locally on an IIS server.
+
+## Contents
+
+1. [How it works](#1-how-it-works)
+2. [Prerequisites](#2-prerequisites)
+3. [Project setup](#3-project-setup)
+4. [Automatically list the printers](#4-automatically-list-the-printers)
+5. [Publish the tutorials on IIS (technician side)](#5-publish-the-tutorials-on-iis-technician-side)
+6. [User-facing site](#6-user-facing-site)
+7. [Tutorial: GPO for installing printers and drivers without elevation](#7-tutorial-gpo-for-installing-printers-and-drivers-without-elevation)
+8. [Tutorial: PrintNightmare fix and Point and Print hardening (on-premises GPO)](#8-tutorial-printnightmare-fix-and-point-and-print-hardening-on-premises-gpo)
+9. [Tutorial: PrintNightmare hardening with Microsoft Intune](#9-tutorial-printnightmare-hardening-with-microsoft-intune)
+10. [Tutorial: PrintNightmare hardening with VMware Workspace ONE UEM](#10-tutorial-printnightmare-hardening-with-vmware-workspace-one-uem)
+11. [Tutorial: Windows print server for macOS and Linux clients](#11-tutorial-windows-print-server-for-macos-and-linux-clients)
+12. [Repository layout](#12-repository-layout)
+13. [`printers.json` data format](#13-printersjson-data-format)
+14. [Troubleshooting](#14-troubleshooting)
+15. [License](#15-license)
+
+---
+
+## 1. How it works
+
+| Component | Role |
+|---|---|
+| `Export-PrinterList.ps1` | Queries a Windows print server and generates `printers.json`. |
+| `editeur-imprimantes.html` | Technician editor: add, edit and reorder printers, customize the header and footer. |
+| `printers.json` | Single source of truth, read by the user-facing site. |
+| `index.html` | User-facing site: search for a printer, then follow an installation tutorial for Windows, macOS or Linux. |
+
+A user opens the site on the local network, finds their printer by name or location, and follows the steps matching their operating system. The queue and server are pre-filled and can be copied in one click.
+
+## 2. Prerequisites
+
+**Windows print server**
+- Windows Server 2012 R2 or later, with the *Print and Document Services* role installed.
+- Printers shared (sharing enabled on each queue).
+- `PrintManagement` PowerShell module available (included by default).
+- A read-only service account on the print server for the export.
+
+**Publishing server**
+- Windows Server with the **IIS** role, serving HTTP on the internal network only.
+- Write access to the publishing folder for the technician who updates `printers.json`.
+
+**Technician workstation**
+- A recent browser (Edge, Chrome, Firefox).
+- PowerShell 5.1 or later for the export.
+
+**Repository**
+- Git to clone the project.
+- No npm or pip dependencies: the project is HTML, CSS, JavaScript and PowerShell.
+
+## 3. Project setup
+
+```powershell
+git clone https://github.com/Poste2Travail/PrinterTutorialGenerator.git
+cd PrinterTutorialGenerator
+```
+
+Copy the project files to the IIS server, for example to `C:\inetpub\wwwroot\printers\`.
+
+Check that the data file is served: open `http://<server>/printers/printers.json` in a browser. It must display without a 404.
+
+## 4. Automatically list the printers
+
+`Export-PrinterList.ps1` reads the shared queues of the print server and writes `printers.json`. It never modifies the server.
+
+**Example**
+
+```powershell
+.\Export-PrinterList.ps1 `
+    -Server PRTSRV01.exemple.local `
+    -OutFile C:\inetpub\wwwroot\printers\printers.json `
+    -MappingFile .\mapping.csv
+```
+
+**Optional `mapping.csv`** (semicolon-separated) to give each queue a readable location:
+
+```csv
+queue;location
+IMP-1R-01;1st floor - Main entrance
+IMP-3C-01;3rd floor - Corridor C01
+```
+
+Without this file, the location is taken from the Windows `Location` property, or set to `À compléter` (to be completed). Complete it via the editor.
+
+**Scheduling**: to keep the list up to date every night, create a scheduled task (`taskschd.msc`) that runs the script under a service account, with a daily trigger at 02:00.
+
+## 5. Publish the tutorials on IIS (technician side)
+
+1. Create an IIS site or application named `printers`, bound to `C:\inetpub\wwwroot\printers`.
+2. Restrict access to the internal network (anonymous authentication enabled, IP restrictions if needed).
+3. Check the `.json` MIME type: `application/json` (present by default on recent IIS versions).
+4. Open `editeur-imprimantes.html`, edit the list, click **Download JSON** and replace `printers.json` on the server.
+
+Users see the changes when they reload the page.
+
+## 6. User-facing site
+
+`index.html` is the page users open. It must sit in the **same folder** as `printers.json`:
+
+```
+C:\inetpub\wwwroot\printers\
+├── index.html        ← user-facing site (this file)
+└── printers.json     ← generated by Export-PrinterList.ps1 or the editor
+```
+
+The URL users open is therefore `http://<server>/printers/`.
+
+What it does:
+- Language switch FR / EN, remembered in the browser. The language is detected from the browser on first visit.
+- Live search by printer name, location or queue.
+- For the selected printer, step-by-step tutorials for **Windows**, **macOS** and **Linux**, with the server path or command ready to copy.
+- Header, subtitle and footer (support contact, hours, portal) come from the `config` block of `printers.json`.
+
+To change the layout or wording, edit `index.html`: the translations are in the `T` object at the top of the script.
+
+## 7. Tutorial: GPO for installing printers and drivers without elevation
+
+Goal: let standard users install printers **and their drivers** from approved print servers, without a UAC prompt and without local administrator rights, while keeping the hardening baseline from section 8.
+
+The baseline is never relaxed to make this work: drivers come only from **approved servers**, driver installation stays **restricted to administrators**, and **elevation prompts are kept**.
+
+### 7.1 Principle
+
+Since the July 2021 update (CVE-2021-34527), Windows restricts print driver installation to administrators. Two mechanisms are involved, and they are not equivalent:
+
+- **Server restriction** (*Point and Print Restrictions*): drivers can only come from the listed FQDNs.
+- **Driver restriction** (*Limit print driver installation to Administrators*): who may install a driver.
+
+The recommended way to let standard users install printers is **Package Point and Print**: signed, packaged drivers, served only by approved servers. Whether a standard user can install a packaged driver while the administrator restriction stays enabled depends on the Windows build: **validate it in the lab first** (7.6). If it does not work, do not disable the restriction globally; follow the exception process in section 8.3.
+
+### 7.2 Create the GPO
+
+1. Open the *Group Policy Management* console (`gpmc.msc`).
+2. Create a GPO named `GPO - User Printers` and link it to the organizational unit containing the workstations (not the users).
+3. Edit the GPO and go to:
+   `Computer Configuration > Policies > Administrative Templates > Printers`
+
+### 7.3 Settings to configure
+
+| Setting | Value | Effect |
+|---|---|---|
+| **Point and Print Restrictions** | Enabled | Activates server restrictions. |
+| *Users can only point and print to these servers* | Enabled, `PRTSRV01.exemple.local;PRTSRV02.exemple.local` | Only the listed servers can provide drivers. Use FQDNs, not short names. |
+| *When installing drivers for a new connection* | **Show warning and elevation prompt** | Keeps the security prompt. |
+| *When updating drivers for an existing connection* | **Show warning and elevation prompt** | Keeps the security prompt. |
+| **Package Point and Print - Approved servers** | Enabled, same FQDN list | Restricts packaged drivers to the approved servers. |
+| **Limit print driver installation to Administrators** | Enabled | Baseline. Only disable it through the exception process in 8.3. |
+
+Paths:
+- `Computer Configuration > Policies > Administrative Templates > Printers > Point and Print Restrictions`
+- `Computer Configuration > Policies > Administrative Templates > Printers > Package Point and Print - Approved servers`
+
+> Do not set *Do not show warning or elevation prompt*. This setting weakens the protection and is not part of this project's baseline.
+
+### 7.4 Equivalent registry values (without GPMC)
+
+```reg
+Windows Registry Editor Version 5.00
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows NT\Printers]
+"RestrictDriverInstallationToAdministrators"=dword:00000001
+
+[HKEY_LOCAL_MACHINE\SOFTWARE\Policies\Microsoft\Windows NT\Printers\PointAndPrint]
+"Restricted"=dword:00000001
+"TrustedServers"=dword:00000001
+"ServerList"="PRTSRV01.exemple.local;PRTSRV02.exemple.local"
+"NoWarningNoElevationOnInstall"=dword:00000000
+"UpdatePromptSettings"=dword:00000000
+```
+
+On a managed fleet, set these through the GPO and not by hand. The registry form is for reference and for the verification in section 8.4.
+
+### 7.5 Package Point and Print (recommended)
+
+1. On each approved print server, add the signed drivers to the print queue via *Print Management* (`printmanagement.msc`).
+2. Check that the drivers are signed by the vendor (WHQL or Microsoft signature).
+3. Enable the GPO settings from 7.3, including *Package Point and Print - Approved servers*.
+4. Test on a reference workstation with a standard account: *Add a printer > The printer that I want isn't listed > Select a shared printer by name*, then enter `\\PRTSRV01.exemple.local\IMP-1R-01`.
+
+### 7.6 Verification
+
+```powershell
+# On the workstation, with a standard account
+gpresult /r | Select-String "Point and Print"
+Get-Printer | Select-Object Name, DriverName, PortName
+```
+
+A successful installation from an approved server must work **without** a UAC prompt. If a prompt appears, check the state with the command in section 8.4 before changing anything.
+
+## 8. Tutorial: PrintNightmare fix and Point and Print hardening (on-premises GPO)
+
+The **PrintNightmare** fix (CVE-2021-34527, CVE-2021-1675) must stay active. The Point and Print hardening below is what makes the fix effective in practice: the fix limits **who** installs drivers, the server allow-list limits **where** drivers come from. Both are required.
+
+### 8.1 Hardening baseline
+
+| Control | Value | Notes |
+|---|---|---|
+| `RestrictDriverInstallationToAdministrators` | `1` | Driver installation reserved for administrators. |
+| Point and Print Restrictions | Enabled | Server restriction active. |
+| Only specified servers (`TrustedServers`) | Enabled | Drivers only from the listed servers. |
+| Approved servers (`ServerList`) | `PRTSRV01.exemple.local;PRTSRV02.exemple.local` | Always FQDNs. |
+| Package Point and Print approved servers | Enabled, same list | Packaged drivers only from approved servers. |
+| `NoWarningNoElevationOnInstall` | `0` / Disabled | Keep elevation prompts. |
+| `UpdatePromptSettings` | `0` | Keep prompts for driver updates. |
+| Spooler on domain controllers | Disabled | Reduces coercion risk (MS-RPRN / PrinterBug). |
+| Spooler on Tier 0 systems | Disabled unless required | Only keep it where a print function is needed. |
+| Spooler on client workstations | Enabled if needed | Needed for local printing. |
+| Print servers | Enabled, patched and hardened | Keep them current. |
+
+### 8.2 Why both controls are needed
+
+```text
+Windows client
+│
+┌───────────┴───────────┐
+│                       │
+Server restriction      Driver restriction
+│                       │
+PRTSRV01 allowed        Admin required
+PRTSRV02 allowed        │
+│                       │
+└───────────┬───────────┘
+            │
+        Print queue
+```
+
+Do **not** replace `RestrictDriverInstallationToAdministrators = 1` with the statement "users are limited to PRTSRV01". The two are not equivalent: the server list says where drivers come from, the admin restriction says who installs them. The secure combination is:
+
+1. Only approved servers.
+2. Driver installation reserved for administrators.
+3. Package Point and Print limited to approved servers.
+4. Elevation prompts kept.
+5. Spooler disabled where it is not needed.
+
+### 8.3 Exception process
+
+Relaxing `RestrictDriverInstallationToAdministrators` to `0` is allowed only if all of the following apply:
+
+- A written risk acceptance is signed by the security owner.
+- The scope is a dedicated Entra ID or AD group, for example `GRP-DEV-ImprimantesSansElevation`, containing only the devices that need it.
+- The server allow-list (`TrustedServers` / `ServerList`) remains in place.
+- Print events are monitored (*Applications and Services Logs > Microsoft > Windows > PrintService*).
+- The exception is reviewed at each patch cycle, or at least every three months.
+
+Never disable elevation prompts globally, and never accept "any server" as a fallback.
+
+### 8.4 Check the effective state on each workstation
+
+```powershell
+$Path = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Printers\PointAndPrint'
+$Base = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Printers'
+
+Get-ItemProperty $Base -Name RestrictDriverInstallationToAdministrators -ErrorAction SilentlyContinue |
+    Select-Object RestrictDriverInstallationToAdministrators
+
+Get-ItemProperty $Path -ErrorAction SilentlyContinue |
+    Select-Object Restricted, TrustedServers, ServerList, NoWarningNoElevationOnInstall, UpdatePromptSettings
+```
+
+Expected values: `RestrictDriverInstallationToAdministrators = 1` (or the approved exception), `Restricted = 1`, `TrustedServers = 1`, `ServerList` containing only the approved FQDNs, `NoWarningNoElevationOnInstall = 0`. A missing value means the setting is not applied: check the GPO link or the device profile.
+
+### 8.5 Spooler service
+
+```powershell
+Get-Service Spooler
+```
+
+- On domain controllers, the Spooler must be **Disabled** and stopped.
+- On Tier 0 systems, disable it unless a print function is required.
+- On client workstations, keep it running if local printing is needed.
+
+### 8.6 Maintenance
+
+- Re-run the checks in 8.4 after each cumulative update: a security update can reset a registry value.
+- Review the PrintService logs for unexpected driver installations.
+- Keep the approved server list aligned with the servers actually used, and with `printers.json`.
+
+## 9. Tutorial: PrintNightmare hardening with Microsoft Intune
+
+Intune cannot link a GPO. The same baseline from section 8 is deployed as a **device configuration policy**. Devices must reach the approved print servers (on-premises, or through VPN depending on your architecture).
+
+### 9.1 Create the policy
+
+1. In the Intune admin center: *Devices > Windows > Configuration > Create > New policy*.
+2. Platform: **Windows 10 and later**, profile type: **Settings catalog**.
+3. In the **Printers** category, configure:
+   - **Point and Print Restrictions**: Enabled
+     - *Users can only point and print to these servers*: Enabled, list `PRTSRV01.exemple.local;PRTSRV02.exemple.local`
+     - *When installing drivers for a new connection*: **Show warning and elevation prompt**
+     - *When updating drivers for an existing connection*: **Show warning and elevation prompt**
+   - **Package Point and Print - Approved servers**: Enabled, same list
+   - **Limit print driver installation to Administrators**: **Enabled**
+4. Assign the policy to a **device** group (not a user group).
+
+> Setting names can differ slightly between Intune versions. Search the Settings catalog with the keywords `Point and Print` and `Limit print driver`.
+
+### 9.2 Equivalent OMA-URI values (custom profile, if a setting is not exposed)
+
+Verify the exact OMA-URI paths in your tenant before deployment.
+
+| Registry value | Baseline value | Notes |
+|---|---|---|
+| `RestrictDriverInstallationToAdministrators` (Printers) | `1` | Baseline. `0` only for the approved exception group (8.3). |
+| `Restricted` (PointAndPrint) | `1` | Enables Point and Print restrictions. |
+| `TrustedServers` (PointAndPrint) | `1` | Only the servers in `ServerList`. |
+| `ServerList` (PointAndPrint) | `PRTSRV01.exemple.local;PRTSRV02.exemple.local` | String value, FQDNs only. |
+| `NoWarningNoElevationOnInstall` (PointAndPrint) | `0` | Never `1`. |
+
+### 9.3 Exception group (only if approved under 8.3)
+
+Create a dedicated Entra ID device group, for example `GRP-DEV-ImprimantesSansElevation`, containing only the devices covered by the exception. Assign the relaxed value to that group only. All other devices keep the baseline.
+
+### 9.4 Verify on the device
+
+Run the check from section 8.4 on the device. Then sign in as a standard user and install a printer from `\\PRTSRV01.exemple.local\IMP-1R-01`. For the baseline group, a UAC prompt is acceptable only if the driver is not yet packaged on the approved server; in that case, return to 7.5.
+
+## 10. Tutorial: PrintNightmare hardening with VMware Workspace ONE UEM
+
+Workspace ONE UEM (formerly AirWatch) manages Windows devices with profiles and, for settings without a native payload, **Custom Settings** (OMA-URI / SyncML) or **Scripts**. The values are the same baseline as section 8. Check menu names against your console version.
+
+### 10.1 Option A (recommended): Custom Settings profile
+
+1. In the Workspace ONE UEM console: *Devices > Profiles & Resources > Profiles > Add > Add Profile > Windows > Windows Desktop > Custom Settings*.
+2. Paste one SyncML block per value. Example for the admin restriction:
+
+```xml
+<Replace>
+  <CmdID>1</CmdID>
+  <Item>
+    <Target>
+      <LocURI>./Device/Vendor/MSFT/Policy/Config/Printers/RestrictDriverInstallationToAdministrators</LocURI>
+    </Target>
+    <Meta><Format xmlns="syncml:metinf">int</Format></Meta>
+    <Data>1</Data>
+  </Item>
+</Replace>
+```
+
+3. Use only the paths validated in your tenant. Some Printers CSP nodes are not exposed on every Windows build; if a node is missing, use Option B.
+4. Apply the profile to all devices. Only a smart group covered by 8.3 may receive a relaxed value.
+
+### 10.2 Option B: PowerShell script (fallback)
+
+If a value cannot be set through a profile, deploy this script as **SYSTEM** from *Devices > Scripts > Windows > Add*:
+
+```powershell
+# Point and Print hardening baseline (section 8). Runs as SYSTEM.
+$base    = 'HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\Printers'
+$pap     = "$base\PointAndPrint"
+$servers = 'PRTSRV01.exemple.local;PRTSRV02.exemple.local'
+# Baseline = 1. Set to 0 only for devices in the exception group approved under 8.3.
+$restrictAdmins = 1
+
+if (-not (Test-Path $base)) { New-Item -Path $base -Force | Out-Null }
+if (-not (Test-Path $pap))  { New-Item -Path $pap  -Force | Out-Null }
+
+Set-ItemProperty -Path $base -Name 'RestrictDriverInstallationToAdministrators' -Value $restrictAdmins -Type DWord
+Set-ItemProperty -Path $pap  -Name 'Restricted'                   -Value 1        -Type DWord
+Set-ItemProperty -Path $pap  -Name 'TrustedServers'               -Value 1        -Type DWord
+Set-ItemProperty -Path $pap  -Name 'ServerList'                   -Value $servers -Type String
+Set-ItemProperty -Path $pap  -Name 'NoWarningNoElevationOnInstall' -Value 0       -Type DWord
+Set-ItemProperty -Path $pap  -Name 'UpdatePromptSettings'          -Value 0       -Type DWord
+
+Write-Output "Point and Print baseline applied (RestrictDriverInstallationToAdministrators=$restrictAdmins)"
+```
+
+### 10.3 Notes for Workspace ONE
+
+- Scripts run as SYSTEM and are not re-applied after a major Windows update unless scheduled. Use a daily recurrence if the console allows it.
+- The `$servers` list must match the approved servers in section 8.1 and the server name in `printers.json`.
+- Document the smart group membership: it is the only record of which devices are in the exception.
+
+### 10.4 Verification
+
+Run the check from section 8.4 on the device, and confirm the script's return status in the console.
+
+---
+
+## 11. Tutorial: Windows print server for macOS and Linux clients
+
+Recommended method: **IPP** through the *Internet Printing* role service. macOS and Linux clients talk HTTP to IIS, which forwards to the Windows print queue. This method is not handled by the export script: it is configured manually, once per server.
+
+### 11.1 Windows server prerequisites
+
+- **Print and Document Services** role with the **Internet Printing** role service. Installing it also adds IIS and its dependencies.
+- The print queue is **shared** and has a driver that accepts **PostScript** (vendor PostScript driver or universal PostScript driver). This is the driver used by the "Generic PostScript" queue on macOS and Linux.
+- **Firewall**: allow TCP port 80 (HTTP) from the client subnets. In production, prefer HTTPS (port 443) with an internal certificate, because IPP over plain HTTP sends credentials in clear text.
+- **Rights**: by default, Internet Printing requires Windows authentication. Create a domain group (for example `GRP-Print-Clients-Mac-Linux`) and grant it the **Print** permission on the queue.
+
+### 11.2 Check on the server
+
+```powershell
+Get-Printer -Name IMP-1R-01 | Select-Object Name, Shared, ShareName
+Get-Service Spooler, W3SVC
+```
+
+From a network workstation, open `http://PRTSRV01.exemple.local/printers/IMP-1R-01/.printer`. An authentication prompt must appear: enter a domain account that belongs to the authorized group. An IPP or XML response page confirms that the queue is reachable.
+
+### 11.3 macOS
+
+1. Open **System Settings > Printers & Scanners**, then click **Add Printer**.
+2. Open the **IP** tab.
+3. Fill in:
+   - Protocol: **IPP**
+   - Address: `PRTSRV01.exemple.local`
+   - Print queue: `printers/IMP-1R-01`
+   - Driver: **Generic PostScript**. Choose **AirPrint** only if macOS actually offers it for this queue.
+4. If macOS asks for credentials, enter a domain account in the form `DOMAIN\username`.
+
+> Windows Server does not always support IPP Everywhere (driverless printing). If the generic drivers fail, go back to the PostScript driver and check that the queue's driver accepts PostScript.
+
+### 11.4 Linux (CUPS)
+
+Install CUPS if needed (Debian/Ubuntu: `sudo apt install cups cups-filters`), then:
+
+```bash
+# Driverless method (IPP Everywhere), test this first
+sudo lpadmin -p IMP-1R-01 -E -v ipp://PRTSRV01.exemple.local/printers/IMP-1R-01 -m everywhere
+
+# Fallback if the server does not support IPP Everywhere
+sudo lpadmin -p IMP-1R-01 -E -v ipp://PRTSRV01.exemple.local/printers/IMP-1R-01 -m drv:///sample.drv/generic.ppd
+```
+
+If the server requires authentication, CUPS asks for credentials when printing. To store them on the queue, use the `auth-info-required` attribute (`-o auth-info-required=username,password`). Validate the syntax on your CUPS version before rolling it out.
+
+### 11.5 SMB option (fallback, not recommended)
+
+Only useful if IPP is blocked and no other option is possible.
+
+- macOS: the **Windows** tab in the add-printer window, depending on the macOS version. Less reliable than IPP.
+- Linux: CUPS' SMB backend takes credentials in the URI:
+
+```bash
+sudo lpadmin -p IMP-1R-01 -E \
+  -v "smb://DOMAIN%5Cuser:Password@PRTSRV01/IMP-1R-01" \
+  -m "drv:///sample.drv/generic.ppd"
+```
+
+> This password is visible in `lpstat -v` and in the process list. Use only a least-privilege service account, and only on trusted workstations. The `smbclient` package must be installed.
+
+### 11.6 Client-side verification
+
+```bash
+lpstat -p IMP-1R-01 -l          # Queue status and capabilities
+lp -d IMP-1R-01 test.txt        # Test print
+```
+
+On the server, the job must appear in the queue:
+
+```powershell
+Get-PrintJob -PrinterName IMP-1R-01
+```
+
+---
+
+## 12. Repository layout
+
+```
+PrinterTutorialGenerator/
+├── README.md                    English documentation
+├── README.fr.md                 French documentation
+├── LICENSE                      MIT License
+├── Export-PrinterList.ps1       Export printers from a Windows print server
+├── editeur-imprimantes.html     Configuration editor (technicians)
+├── index.html                   User-facing site
+├── printers.example.json        Anonymized example data
+└── printers.json                Real data (do not commit, see .gitignore)
+```
+
+Add `printers.json` and `mapping.csv` to `.gitignore` so your server and device names are not published.
+
+## 13. `printers.json` data format
+
+```json
+{
+    "config": {
+        "title_fr": "Assistant Installation Imprimantes",
+        "subtitle_fr": "Installation guidée des imprimantes réseau",
+        "title_en": "Printer Installation Assistant",
+        "subtitle_en": "Guided network printer installation",
+        "logo_url": "",
+        "logo_position": "center",
+        "footer": {
+            "fr": {
+                "title": "Besoin d'aide ?",
+                "subtitle": "Support technique :",
+                "email": "support@exemple.local",
+                "phone": "",
+                "hours": "",
+                "website": "",
+                "portal_text": "",
+                "portal_url": ""
+            },
+            "en": {
+                "title": "Need help?",
+                "subtitle": "Technical support:",
+                "email": "support@exemple.local",
+                "phone": "",
+                "hours": "",
+                "website": "",
+                "portal_text": "",
+                "portal_url": ""
+            }
+        }
+    },
+    "printers": [
+        {
+            "name": "Imprimante IMP-1R-01",
+            "location": "1st floor - Main entrance",
+            "queue": "IMP-1R-01",
+            "server": "PRTSRV01.exemple.local",
+            "mac-driver": "Generic PostScript Printer"
+        }
+    ]
+}
+```
+
+| Field | Description |
+|---|---|
+| `name` | Name displayed to the user. |
+| `location` | Readable location, used for search. |
+| `queue` | Share name of the queue on the server. |
+| `server` | DNS name of the print server. |
+| `mac-driver` | Driver to use on macOS/Linux (generic PostScript by default). |
+
+## 14. Troubleshooting
+
+| Symptom | Likely cause | Action |
+|---|---|---|
+| `printers.json` returns 404 | IIS site not bound to the folder | Check the site binding and NTFS permissions. |
+| The script reports "access denied" | Account lacks read access to the spooler | Add the service account to *Print Operators*. |
+| Driver refused on a standard workstation | Approved servers not set, or unsigned driver | Review sections 7.3 and 7.5. |
+| Site shows "unable to load the printer list" | `printers.json` missing or invalid JSON | Check that both files share a folder and validate the JSON. |
+| macOS cannot print | Incompatible driver | Switch to IPP Everywhere or generic PostScript. |
+| Empty list in the editor | Invalid JSON file | Validate the JSON (editor, raw JSON tab). |
+
+## 15. License
+
+Released under the MIT License. See [LICENSE](LICENSE).

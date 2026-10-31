@@ -1,0 +1,83 @@
+{
+    "config": {
+        "title_fr": "🖨️ Assistant Installation Imprimantes",
+        "subtitle_fr": "Solution simplifiée pour EXEMPLE - Support technique intégré",
+        "title_en": "🖨️ Printer Installation Assistant",
+        "subtitle_en": "Simplified solution for EXEMPLE - Integrated Technical Support",
+        "logo_url": "",
+        "logo_position": "center",
+        "footer": {
+            "fr": {
+                "title": "📞 Besoin d'aide ?",
+                "subtitle": "Support technique SITE PARIS:",
+                "email": "support@exemple.local",
+                "phone": "+33 1 00 00 00 00",
+                "hours": "Lundi-Vendredi 8h-20h | Samedi-Dimanche 10h-20h",
+                "website": "https://www.exemple.com",
+                "portal_text": "Portail Aide",
+                "portal_url": "https://intranet.exemple.local/aide/fr"
+            },
+            "en": {
+                "title": "📞 Need help?",
+                "subtitle": "SITE PARIS Technical Support:",
+                "email": "support@exemple.local",
+                "phone": "+33 1 00 00 00 00",
+                "hours": "Mon-Fri 8am-8pm | Sat-Sun 10am-8pm",
+                "website": "https://www.exemple.com",
+                "portal_text": "Aide Portal",
+                "portal_url": "https://intranet.exemple.local/aide/en"
+            }
+        }
+    },
+    "printers": [
+        {
+            "name": "Imprimante IMP-1R-01",
+            "location": "1er étage - Entrée principal",
+            "queue": "IMP-1R-01",
+            "server": "PRTSRV01.exemple.local",
+            "mac-driver": "Generic PostScript Printer"
+        },
+        {
+            "name": "Imprimante IMP-2R-01",
+            "location": "2ème étage - Entrée secondaire",
+            "queue": "IMP-2R-01",
+            "server": "PRTSRV01.exemple.local",
+            "mac-driver": "Generic PostScript Printer"
+        },
+        {
+            "name": "Imprimante IMP-3C-01",
+            "location": "3ème étage - Couloir C01",
+            "queue": "IMP-3C-01",
+            "server": "PRTSRV01.exemple.local",
+            "mac-driver": "Generic PostScript Printer"
+        },
+        {
+            "name": "Imprimante IMP-3C-02",
+            "location": "3ème étage - Couloir C02",
+            "queue": "IMP-3C-02",
+            "server": "PRTSRV01.exemple.local",
+            "mac-driver": "Generic PostScript Printer"
+        },
+        {
+            "name": "Imprimante IMP-ESG-01",
+            "location": "Espace Entre-Sol Gauche",
+            "queue": "IMP-ESG-01",
+            "server": "PRTSRV01.exemple.local",
+            "mac-driver": "Generic PostScript Printer"
+        },
+        {
+            "name": "Imprimante IMP-MZD-01",
+            "location": "Mezzanine Droite",
+            "queue": "IMP-MZD-01",
+            "server": "PRTSRV01.exemple.local",
+            "mac-driver": "Generic PostScript Printer"
+        },
+        {
+            "name": "Imprimante IMP-MZG-02",
+            "location": "Mezzanine Gauche - Plateau haut",
+            "queue": "IMP-MZG-02",
+            "server": "PRTSRV01.exemple.local",
+            "mac-driver": "Generic PostScript Printer"
+        }
+    ]
+}

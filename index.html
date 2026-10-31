@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Assistant Installation Imprimantes</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: linear-gradient(15deg, #f8f8f8 0%, #FFFFFF 100%); min-height: 100vh; padding: 20px; color: #333; }
+        .container { max-width: 1200px; margin: 0 auto; background: #FFF; border-radius: 15px; box-shadow: 0 10px 30px rgba(0,0,0,0.08); overflow: hidden; }
+        .header { background: linear-gradient(135deg, #000000 0%, #1a1a1a 100%); padding: 20px 30px; color: #FFF; display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; }
+        .header h1 { font-size: 24px; font-weight: 300; }
+        .header p { margin-top: 6px; font-size: 14px; color: #bbb; }
+        .lang button { background: transparent; color: #FFF; border: 1px solid #555; padding: 6px 12px; cursor: pointer; border-radius: 4px; font-size: 14px; }
+        .lang button.active { background: #FFF; color: #000; }
+        .main-content { padding: 30px; }
+
+        .search { width: 100%; padding: 12px; font-size: 16px; border: 1px solid #ccc; border-radius: 4px; font-family: inherit; }
+        .status { padding: 12px; border-radius: 5px; margin: 12px 0; font-size: 14px; }
+        .status.ok { background: #e6ffe6; color: #006400; border: 1px solid #a3e9a4; }
+        .status.error { background: #f2dede; color: #a94442; border: 1px solid #a94442; }
+        .status.muted { color: #999; text-align: center; padding: 24px 0; }
+
+        .form-section { border: 1px solid #ddd; padding: 20px; border-radius: 8px; margin-top: 20px; background: #fcfcfc; }
+        .form-section h2 { font-size: 1.4em; color: #333; margin-bottom: 15px; }
+
+        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; margin-top: 16px; }
+        .printer-card { background: #FFF; border: 1px solid #ddd; border-radius: 8px; padding: 14px; cursor: pointer; text-align: left; font: inherit; color: inherit; }
+        .printer-card:hover, .printer-card.selected { border-color: #333; box-shadow: 0 4px 10px rgba(0,0,0,0.06); }
+        .printer-card strong { display: block; margin-bottom: 4px; }
+        .printer-card span { color: #666; font-size: 14px; }
+
+        .tabs { display: flex; gap: 10px; margin: 20px 0 15px; border-bottom: 2px solid #e0e0e0; }
+        .tab { padding: 12px 24px; cursor: pointer; background: transparent; border: none; border-bottom: 3px solid transparent; font-size: 16px; font-weight: 500; color: #666; transition: all 0.3s; font-family: inherit; }
+        .tab:hover { color: #333; background: #f8f8f8; }
+        .tab.active { color: #000; border-bottom-color: #333; }
+
+        .meta { color: #666; font-size: 14px; margin-bottom: 12px; }
+        ol.steps { padding-left: 22px; }
+        ol.steps li { margin: 10px 0; line-height: 1.5; }
+        code.copy { display: inline-block; background: #f4f4f4; border: 1px solid #ddd; padding: 4px 8px; border-radius: 4px; font-family: 'Consolas', 'Monaco', monospace; word-break: break-all; font-size: 14px; }
+        .copy-btn { margin-left: 6px; padding: 4px 10px; border: none; background: #e0e0e0; color: #333; border-radius: 4px; cursor: pointer; font-family: inherit; font-size: 13px; }
+        .copy-btn:hover { background: #ccc; }
+        .note { background: #fff8e1; border: 1px solid #f0d878; padding: 10px 12px; border-radius: 5px; font-size: 14px; margin-top: 14px; }
+
+        .footer { border-top: 1px solid #e0e0e0; background: #fcfcfc; padding: 20px 30px; font-size: 14px; color: #666; }
+        .footer a { color: #333; }
+        .footer strong { color: #333; }
+        .footer div { margin-top: 4px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div>
+                <h1 id="site-title">Assistant Installation Imprimantes</h1>
+                <p id="site-subtitle"></p>
+            </div>
+            <div class="lang">
+                <button type="button" data-lang="fr" class="active">FR</button>
+                <button type="button" data-lang="en">EN</button>
+            </div>
+        </div>
+
+        <div class="main-content">
+            <input id="search" class="search" type="search" autocomplete="off">
+            <div id="status" class="status muted"></div>
+            <div id="grid" class="grid"></div>
+
+            <div id="panel" class="form-section" hidden></div>
+        </div>
+
+        <div class="footer" id="footer"></div>
+    </div>
+
+    <script>
+    (function () {
+        'use strict';
+
+        var T = {
+            fr: {
+                search: 'Rechercher par nom, emplacement ou file d\'impression...',
+                loading: 'Chargement de la liste des imprimantes...',
+                loadError: 'Impossible de charger la liste des imprimantes. Contactez le support.',
+                noResult: 'Aucune imprimante ne correspond à votre recherche.',
+                printQueue: 'File d\'impression', server: 'Serveur', driver: 'Pilote macOS',
+                windows: 'Windows', mac: 'macOS', linux: 'Linux',
+                winSteps: [
+                    'Ouvrez Paramètres > Bluetooth et appareils > Imprimantes et scanners.',
+                    'Cliquez sur « Ajouter un appareil », puis sur « L\'imprimante que je veux n\'est pas répertoriée ».',
+                    'Choisissez « Sélectionner une imprimante partagée par nom » et saisissez :',
+                    'Suivez l\'assistant, puis imprimez une page de test.'
+                ],
+                winNote: 'Si une demande d\'administrateur apparaît, n\'entrez pas de mot de passe : contactez le support. Le poste n\'est probablement pas encore configuré par la stratégie de groupe.',
+                macSteps: [
+                    'Ouvrez Réglages Système > Imprimantes et scanners, puis cliquez sur « Ajouter une imprimante ».',
+                    'Ouvrez l\'onglet « IP ».',
+                    'Protocole : IPP. Adresse : le serveur ci-dessous. File d\'impression : le chemin ci-dessous.',
+                    'Pilote : « Générique PostScript » (ou « AirPrint » si proposé), puis ajoutez l\'imprimante.'
+                ],
+                linSteps: [
+                    'Ouvrez un terminal et exécutez la commande ci-dessous (CUPS doit être installé).',
+                    'Vérifiez l\'imprimante avec la commande ci-dessous.'
+                ],
+                footerNeed: 'Besoin d\'aide ?'
+            },
+            en: {
+                search: 'Search by name, location or print queue...',
+                loading: 'Loading printer list...',
+                loadError: 'Unable to load the printer list. Please contact support.',
+                noResult: 'No printer matches your search.',
+                printQueue: 'Print queue', server: 'Server', driver: 'macOS driver',
+                windows: 'Windows', mac: 'macOS', linux: 'Linux',
+                winSteps: [
+                    'Open Settings > Bluetooth & devices > Printers & scanners.',
+                    'Click "Add device", then "The printer that I want isn\'t listed".',
+                    'Choose "Select a shared printer by name" and enter:',
+                    'Follow the wizard, then print a test page.'
+                ],
+                winNote: 'If an administrator prompt appears, do not enter a password: contact support. The device is probably not yet configured by Group Policy.',
+                macSteps: [
+                    'Open System Settings > Printers & Scanners, then click "Add Printer".',
+                    'Open the "IP" tab.',
+                    'Protocol: IPP. Address: the server below. Print queue: the path below.',
+                    'Driver: "Generic PostScript" (or "AirPrint" if offered), then add the printer.'
+                ],
+                linSteps: [
+                    'Open a terminal and run the command below (CUPS must be installed).',
+                    'Check the printer with the command below.'
+                ],
+                footerNeed: 'Need help?'
+            }
+        };
+
+        var lang = 'fr';
+        var data = null;
+        var selected = null;
+        var osTab = 'windows';
+
+        function t(k) { return T[lang][k]; }
+
+        function el(tag, attrs, text) {
+            var n = document.createElement(tag);
+            if (attrs) Object.keys(attrs).forEach(function (k) { n.setAttribute(k, attrs[k]); });
+            if (text !== undefined && text !== null) n.textContent = text;
+            return n;
+        }
+
+        function copyButton(value) {
+            var b = el('button', { type: 'button', 'class': 'copy-btn' }, lang === 'en' ? 'Copy' : 'Copier');
+            b.addEventListener('click', function () {
+                if (navigator.clipboard) navigator.clipboard.writeText(value);
+                b.textContent = lang === 'en' ? 'Copied' : 'Copié';
+                setTimeout(function () { b.textContent = lang === 'en' ? 'Copy' : 'Copier'; }, 1500);
+            });
+            return b;
+        }
+
+        function codeLine(value) {
+            var wrap = el('span');
+            wrap.appendChild(el('code', { 'class': 'copy' }, value));
+            wrap.appendChild(copyButton(value));
+            return wrap;
+        }
+
+        function cfg() { return (data && data.config) || {}; }
+        function footer() { return (cfg().footer || {})[lang] || {}; }
+
+        function applyLabels() {
+            document.documentElement.lang = lang;
+            var c = cfg();
+            document.getElementById('site-title').textContent = (lang === 'en' ? c.title_en : c.title_fr) || (lang === 'en' ? 'Printer Installation Assistant' : 'Assistant Installation Imprimantes');
+            document.getElementById('site-subtitle').textContent = (lang === 'en' ? c.subtitle_en : c.subtitle_fr) || '';
+            document.getElementById('search').placeholder = t('search');
+            document.querySelectorAll('.lang button').forEach(function (b) {
+                b.classList.toggle('active', b.getAttribute('data-lang') === lang);
+            });
+            renderFooter();
+        }
+
+        function renderFooter() {
+            var f = footer();
+            var box = document.getElementById('footer');
+            box.textContent = '';
+            box.appendChild(el('strong', null, f.title || t('footerNeed')));
+            if (f.subtitle) box.appendChild(el('div', null, f.subtitle));
+            if (f.email) {
+                var p = el('div');
+                p.appendChild(el('a', { href: 'mailto:' + f.email }, f.email));
+                box.appendChild(p);
+            }
+            if (f.phone) box.appendChild(el('div', null, f.phone));
+            if (f.hours) box.appendChild(el('div', null, f.hours));
+            if (f.portal_url && f.portal_text) {
+                var q = el('div');
+                q.appendChild(el('a', { href: f.portal_url, target: '_blank', rel: 'noopener' }, f.portal_text));
+                box.appendChild(q);
+            }
+        }
+
+        function matches(p, q) {
+            if (!q) return true;
+            return [p.name, p.location, p.queue].join(' ').toLowerCase().indexOf(q) !== -1;
+        }
+
+        function renderGrid() {
+            if (!data) return;
+            var grid = document.getElementById('grid');
+            var status = document.getElementById('status');
+            grid.textContent = '';
+            var q = document.getElementById('search').value.trim().toLowerCase();
+            var list = (data.printers || []).filter(function (p) { return matches(p, q); });
+            if (!list.length) {
+                status.className = 'status muted';
+                status.textContent = t('noResult');
+                return;
+            }
+            status.className = 'status muted';
+            status.textContent = '';
+            status.style.display = 'none';
+            list.forEach(function (p) {
+                var card = el('button', { type: 'button', 'class': 'printer-card' + (selected === p ? ' selected' : '') });
+                card.appendChild(el('strong', null, p.name));
+                card.appendChild(el('span', null, p.location || ''));
+                card.addEventListener('click', function () { selected = p; renderGrid(); renderPanel(); });
+                grid.appendChild(card);
+            });
+        }
+
+        function renderPanel() {
+            var panel = document.getElementById('panel');
+            if (!selected) { panel.hidden = true; return; }
+            panel.hidden = false;
+            panel.textContent = '';
+            panel.appendChild(el('h2', null, selected.name));
+            panel.appendChild(el('div', { 'class': 'meta' }, (selected.location || '')));
+
+            var tabs = el('div', { 'class': 'tabs' });
+            [['windows', t('windows')], ['mac', t('mac')], ['linux', t('linux')]].forEach(function (pair) {
+                var b = el('button', { type: 'button', 'class': 'tab' + (osTab === pair[0] ? ' active' : '') }, pair[1]);
+                b.addEventListener('click', function () { osTab = pair[0]; renderPanel(); });
+                tabs.appendChild(b);
+            });
+            panel.appendChild(tabs);
+
+            var server = selected.server || '';
+            var queue = selected.queue || '';
+            var ol = el('ol', { 'class': 'steps' });
+            var li;
+
+            if (osTab === 'windows') {
+                t('winSteps').forEach(function (s, i) {
+                    li = el('li', null, s);
+                    if (i === 2) { li.appendChild(document.createElement('br')); li.appendChild(codeLine('\\\\' + server + '\\' + queue)); }
+                    ol.appendChild(li);
+                });
+                panel.appendChild(ol);
+                panel.appendChild(el('div', { 'class': 'note' }, t('winNote')));
+            } else if (osTab === 'mac') {
+                t('macSteps').forEach(function (s) { ol.appendChild(el('li', null, s)); });
+                panel.appendChild(ol);
+                var info = el('div', { 'class': 'meta' });
+                info.appendChild(document.createTextNode(t('server') + ' : '));
+                info.appendChild(codeLine(server));
+                info.appendChild(document.createElement('br'));
+                info.appendChild(document.createTextNode(t('printQueue') + ' : '));
+                info.appendChild(codeLine('printers/' + queue));
+                info.appendChild(document.createElement('br'));
+                info.appendChild(document.createTextNode(t('driver') + ' : ' + (selected['mac-driver'] || 'Generic PostScript Printer')));
+                panel.appendChild(info);
+            } else {
+                t('linSteps').forEach(function (s, i) {
+                    li = el('li', null, s);
+                    li.appendChild(document.createElement('br'));
+                    li.appendChild(codeLine(i === 0
+                        ? 'sudo lpadmin -p ' + queue + ' -E -v ipp://' + server + '/printers/' + queue + ' -m everywhere'
+                        : 'lpstat -p ' + queue + ' -l'));
+                    ol.appendChild(li);
+                });
+                panel.appendChild(ol);
+            }
+        }
+
+        function setLang(l) {
+            lang = l;
+            try { localStorage.setItem('printerLang', l); } catch (e) {}
+            applyLabels();
+            renderGrid();
+            renderPanel();
+        }
+
+        document.querySelectorAll('.lang button').forEach(function (b) {
+            b.addEventListener('click', function () { setLang(b.getAttribute('data-lang')); });
+        });
+        document.getElementById('search').addEventListener('input', renderGrid);
+
+        function initialLang() {
+            var saved = null;
+            try { saved = localStorage.getItem('printerLang'); } catch (e) {}
+            if (saved === 'fr' || saved === 'en') return saved;
+            return (navigator.language || 'fr').toLowerCase().indexOf('en') === 0 ? 'en' : 'fr';
+        }
+
+        lang = initialLang();
+        applyLabels();
+        var statusEl = document.getElementById('status');
+        statusEl.textContent = t('loading');
+
+        fetch('printers.json', { cache: 'no-cache' })
+            .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+            .then(function (json) {
+                data = Array.isArray(json) ? { config: {}, printers: json } : json;
+                statusEl.textContent = '';
+                statusEl.style.display = 'none';
+                applyLabels();
+                renderGrid();
+            })
+            .catch(function () {
+                statusEl.className = 'status error';
+                statusEl.textContent = T[lang].loadError;
+            });
+    })();
+    </script>
+</body>
+</html>
